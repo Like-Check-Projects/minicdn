@@ -1,0 +1,38 @@
+{
+	"ImportPath": "minicdn",
+	"GoVersion": "go1.5beta1",
+	"Deps": [
+		{
+			"ImportPath": "github.com/codeskyblue/groupcache",
+			"Rev": "b803b7719ea858c5be08e8f06dbc19f8696bf191"
+		},
+		{
+			"ImportPath": "github.com/golang/groupcache/consistenthash",
+			"Rev": "604ed5785183e59ae2789449d89e73f3a2a77987"
+		},
+		{
+			"ImportPath": "github.com/golang/groupcache/groupcachepb",
+			"Rev": "604ed5785183e59ae2789449d89e73f3a2a77987"
+		},
+		{
+			"ImportPath": "github.com/golang/groupcache/lru",
+			"Rev": "604ed5785183e59ae2789449d89e73f3a2a77987"
+		},
+		{
+			"ImportPath": "github.com/golang/groupcache/singleflight",
+			"Rev": "604ed5785183e59ae2789449d89e73f3a2a77987"
+		},
+		{
+			"ImportPath": "github.com/golang/protobuf/proto",
+			"Rev": "ab974be44dc3b7b8a1fb306fb32fe9b9f3864b3d"
+		},
+		{
+			"ImportPath": "github.com/gorilla/websocket",
+			"Rev": "a3ec486e6a7a41858210b0fc5d7b5df593b3c4a3"
+		},
+		{
+			"ImportPath": "github.com/ugorji/go/codec",
+			"Rev": "e906e395b9d45d3230e800c8ad1f92f99764e753"
+		}
+	]
+}
