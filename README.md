@@ -19,14 +19,15 @@ MiniCDN分为manager和peer。都是写在一个程序里。
 
 我平常用的时候，就只开一个minicdn的Manager来加速我的后端服务器。如果没有节点的话，manager就会把自己当成一个节点。然后当有特别大的下载即将要冲击我的服务器的时候。我就会找很多的同事，将minicdn部署到他们平常用的电脑上(window系列, 因为是golang语言写的，什么平台的程序都能编译的出来)。这样我在短时间内就拥有了一个性能不错的cdn集群（充分利用同事的资源）。当下载冲击结束的时候，在把这些节点撤掉就可以了。相当省事
 
-## 技术优势
-MiniCDN使用了谷歌开源出来的groupcache框架，目前`dl.google.com`后台就用到了groupcache，性能而言远超那些squid或者nginx-proxy-cache.
+## Technological Advantage
+MiniCDN使用了谷歌开源出来的groupcache框架，目前`dl.google.com`后台就用到了groupcache. 
+因为groupcache支持节点间的数据传输，而类似squid只能从源站点去获取数据，对原站点的压力较大。理论上而言性能要好于squid.
 
 groupcache的数据获取过程很有意思，我把他翻译了过来
 
 **groupcache的运行过程**
 
-[原文地址](https://github.com/golang/groupcache#loading-process)
+[From](https://github.com/golang/groupcache#loading-process)
 
 查找`foo.txt`的过程(节点#5 是N个节点中的一个,每个节点的代码都是一样的)
 
