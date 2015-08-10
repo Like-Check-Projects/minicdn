@@ -19,6 +19,7 @@ var (
 	upstream = flag.String("upstream", "", "Server base URL, conflict with -mirror")
 	address  = flag.String("addr", ":5000", "Listen address")
 	token    = flag.String("token", "1234567890ABCDEFG", "peer and master token should be same")
+	cachedir = flag.String("cachedir", "cache", "Cache directory to store big files")
 )
 
 func InitSignal() {
@@ -39,6 +40,12 @@ func InitSignal() {
 			}()
 		}
 	}()
+}
+
+func checkErr(er error) {
+	if er != nil {
+		log.Fatal(er)
+	}
 }
 
 func main() {
@@ -66,12 +73,17 @@ func main() {
 		}
 	}
 	if *mirror != "" {
-		if _, err := url.Parse(*mirror); err != nil {
-			log.Fatal(err)
-		}
-		if err := InitMaster(); err != nil {
-			log.Fatal(err)
-		}
+		_, err := url.Parse(*mirror)
+		checkErr(err)
+		err = InitMaster()
+		checkErr(err)
+	}
+	if *cachedir == "" {
+		*cachedir = "."
+	}
+	if _, err := os.Stat(*cachedir); os.IsNotExist(err) {
+		er := os.MkdirAll(*cachedir, 0755)
+		checkErr(er)
 	}
 
 	InitSignal()

@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -16,7 +19,7 @@ import (
 )
 
 var (
-	thumbNails = groupcache.NewGroup("thumbnail", 512<<20, groupcache.GetterFunc(
+	thumbNails = groupcache.NewGroup("thumbnail", MAX_MEMORY_SIZE*2, groupcache.GetterFunc(
 		func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
 			fileName := key
 			bytes, err := generateThumbnail(fileName)
@@ -28,27 +31,90 @@ var (
 		}))
 )
 
+const (
+	HR_TYPE_FILE = 1
+	HR_TYPE_BYTE = 2
+
+	MAX_MEMORY_SIZE = 64 << 20
+)
+
 type HttpResponse struct {
 	Header http.Header
+	Type   int
 	Body   []byte
+}
+
+type ErrorWithStatus struct {
+	Msg  string
+	Code int
+}
+
+func (e *ErrorWithStatus) Error() string {
+	return e.Msg
+}
+
+func Md5str(v string) string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(v)))
 }
 
 func generateThumbnail(key string) ([]byte, error) {
 	u, _ := url.Parse(*mirror)
 	u.Path = key
+	fmt.Println("download:", key)
 	resp, err := http.Get(u.String())
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	buf := bytes.NewBuffer(nil)
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return nil, &ErrorWithStatus{string(body), resp.StatusCode}
 	}
-	mpenc := codec.NewEncoder(buf, &codec.MsgpackHandle{})
-	err = mpenc.Encode(HttpResponse{resp.Header, body})
-	return buf.Bytes(), err
+
+	var length int64
+	_, err = fmt.Sscanf(resp.Header.Get("Content-Length"), "%d", &length)
+	if length > MAX_MEMORY_SIZE {
+		filename := filepath.Join(*cachedir, Md5str(key))
+		tmpname := filename + ".xxx.download"
+		finfo, err := os.Stat(filename)
+		var download bool
+		switch {
+		case err != nil:
+			download = true
+		case finfo.Size() != length:
+			download = true
+		default:
+			download = false
+		}
+		fmt.Println("download:", download)
+		if download {
+			fd, err := os.Create(tmpname)
+			if err != nil {
+				return nil, err
+			}
+			_, err = io.Copy(fd, resp.Body)
+			if err != nil {
+				fd.Close()
+				return nil, err
+			}
+			fd.Close()
+			os.Rename(tmpname, filename)
+		}
+		buf := bytes.NewBuffer(nil)
+		mpenc := codec.NewEncoder(buf, &codec.MsgpackHandle{})
+		err = mpenc.Encode(HttpResponse{resp.Header, HR_TYPE_FILE, []byte(filename)})
+		return buf.Bytes(), err
+	} else {
+		buf := bytes.NewBuffer(nil)
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		mpenc := codec.NewEncoder(buf, &codec.MsgpackHandle{})
+		err = mpenc.Encode(HttpResponse{resp.Header, HR_TYPE_BYTE, body})
+		return buf.Bytes(), err
+	}
 }
 
 func FileHandler(w http.ResponseWriter, r *http.Request) {
@@ -66,18 +132,27 @@ func FileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	fmt.Println("KEY:", key)
 	var data []byte
 	var ctx groupcache.Context
 	err := thumbNails.Get(ctx, key, groupcache.AllocatingByteSliceSink(&data))
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		if es, ok := err.(*ErrorWithStatus); ok {
+			http.Error(w, es.Msg, es.Code)
+		} else {
+			http.Error(w, err.Error(), 500)
+		}
 		return
 	}
+
+	fmt.Printf("key: %s, len(data): %d, addr: %p\n", key, len(data), &data[0]) //addr: %p\n", key, &data[0])
 	var hr HttpResponse
 	mpdec := codec.NewDecoder(bytes.NewReader(data), &codec.MsgpackHandle{})
 	err = mpdec.Decode(&hr)
 	if err != nil {
+		if es, ok := err.(*ErrorWithStatus); ok {
+			http.Error(w, es.Msg, es.Code)
+			return
+		}
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -111,11 +186,27 @@ func FileHandler(w http.ResponseWriter, r *http.Request) {
 	if *upstream != "" { // Slave
 		sendc <- sendData
 	}
-	// FIXME(ssx): ModTime should from header
-	var modTime time.Time = time.Now()
+	modTime, err := time.Parse(http.TimeFormat, hr.Header.Get("Last-Modified"))
+	if err != nil {
+		modTime = time.Now()
+	}
 
-	rd := bytes.NewReader(hr.Body)
-	http.ServeContent(w, r, filepath.Base(key), modTime, rd)
+	switch hr.Type {
+	case HR_TYPE_BYTE:
+		rd := bytes.NewReader(hr.Body)
+		http.ServeContent(w, r, filepath.Base(key), modTime, rd)
+	case HR_TYPE_FILE:
+		fmt.Println("From file")
+		rd, err := os.Open(string(hr.Body))
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer rd.Close()
+		http.ServeContent(w, r, filepath.Base(key), modTime, rd)
+	default:
+		http.Error(w, fmt.Sprintf("Header type unknown: %d", hr.Type), 500)
+	}
 }
 
 func LogHandler(w http.ResponseWriter, r *http.Request) {
