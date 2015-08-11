@@ -22,8 +22,7 @@ import (
 var (
 	thumbNails = groupcache.NewGroup("thumbnail", MAX_MEMORY_SIZE*2, groupcache.GetterFunc(
 		func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
-			fileName := key
-			bytes, err := generateThumbnail(fileName)
+			bytes, err := downloadThumbnail(key)
 			if err != nil {
 				return err
 			}
@@ -39,7 +38,7 @@ const (
 
 	// Header Type
 	HT_TYPE_JSON = "json"
-	HT_TYPE_LOG  = "log"
+	HT_TYPE_TEXT = "text"
 
 	MAX_MEMORY_SIZE = 64 << 20
 )
@@ -64,23 +63,6 @@ func (hr *HttpResponse) setKey(key string) {
 		hr.metaPath = filepath.Join(*cachedir, hr.basePath+".meta")
 		hr.tempPath = hr.bodyPath + fmt.Sprintf(".%d.temp.download", rand.Int())
 	}
-}
-
-func (hr *HttpResponse) LoadFile(key string) (err error) {
-	hr.setKey(key)
-	if err = hr.LoadMeta(key); err != nil {
-		return err
-	}
-	hr.BodyData, err = ioutil.ReadFile(hr.bodyPath)
-	return err
-}
-
-func (hr *HttpResponse) DumpFile(key string) (err error) {
-	hr.setKey(key)
-	if err = hr.DumpMeta(key); err != nil {
-		return err
-	}
-	return ioutil.WriteFile(hr.bodyPath, hr.BodyData, 0644)
 }
 
 func (hr *HttpResponse) LoadMeta(key string) (err error) {
@@ -127,17 +109,17 @@ type ErrorWithResponse struct {
 }
 
 func (e *ErrorWithResponse) Error() string {
-	return fmt.Sprintf("%d", e.Type)
+	return fmt.Sprintf("Specified for groupcache.Getter, type: %d", e.Type)
 }
 
 func Md5str(v string) string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(v)))
 }
 
-func generateThumbnail(key string) ([]byte, error) {
+func downloadThumbnail(key string) ([]byte, error) {
 	u, _ := url.Parse(*mirror)
 	u.Path = key
-	fmt.Println("thumbnail:", key)
+	//fmt.Println("thumbnail:", key)
 	resp, err := http.Get(u.String())
 	if err != nil {
 		return nil, err
@@ -153,6 +135,7 @@ func generateThumbnail(key string) ([]byte, error) {
 				Header:     resp.Header,
 				StatusCode: resp.StatusCode,
 			},
+			Type: ER_TYPE_HTML,
 		}
 	}
 
@@ -160,7 +143,7 @@ func generateThumbnail(key string) ([]byte, error) {
 	var length int64
 	_, err = fmt.Sscanf(resp.Header.Get("Content-Length"), "%d", &length)
 
-	if err == nil || length > MAX_MEMORY_SIZE {
+	if err != nil || length > MAX_MEMORY_SIZE {
 		var hr = HttpResponse{}
 		hr.setKey(key)
 
@@ -171,7 +154,7 @@ func generateThumbnail(key string) ([]byte, error) {
 		}
 
 		// Save big data to file
-		fmt.Println("download:", download)
+		//fmt.Println("download:", download)
 		if download {
 			fd, err := os.Create(hr.tempPath)
 			if err != nil {
@@ -209,11 +192,10 @@ func generateThumbnail(key string) ([]byte, error) {
 	}
 }
 
-func sendStats(r *http.Request, success bool) {
+func sendStats(r *http.Request) {
 	data := map[string]interface{}{
 		"remote_addr": r.RemoteAddr,
 		"key":         r.URL.Path,
-		"success":     success,
 		"user_agent":  r.Header.Get("User-Agent"),
 	}
 	headerData := r.Header.Get("X-Minicdn-Data")
@@ -243,7 +225,7 @@ func FileHandler(w http.ResponseWriter, r *http.Request) {
 	state.addActiveDownload(1)
 	defer state.addActiveDownload(-1)
 
-	sendStats(r, true) // stats send to master
+	sendStats(r) // stats send to master
 
 	if *upstream == "" { // Master
 		if peerAddr, err := peerGroup.PeekPeer(); err == nil {
@@ -263,7 +245,7 @@ func FileHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Read Local File
 	if err = hr.LoadMeta(key); err == nil {
-		fmt.Printf("load file: %s\n", key)
+		fmt.Printf("load local file: %s\n", key)
 		bodyfd, er := os.Open(hr.bodyPath)
 		if er != nil {
 			http.Error(w, er.Error(), 500)
@@ -283,7 +265,7 @@ func FileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rd = bytes.NewReader(hr.BodyData)
-		fmt.Printf("key tn: %s, len(data): %d, addr: %p\n", key, len(data), &data[0])
+		fmt.Printf("groupcache: %s, len(data): %d, addr: %p\n", key, len(data), &data[0])
 		goto SERVE_CONTENT
 	}
 	// Too big file will not use groupcache memory storage
@@ -309,6 +291,8 @@ func FileHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			w.Write(es.Resp.BodyData)
 			return
+		default:
+			log.Println("unknown es.Type:", es.Type)
 		}
 	}
 	// Handle groupcache error

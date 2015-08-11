@@ -85,10 +85,9 @@ minicdn contains two parts. manager and peer
 ### Run Manager
 
 ```shell
-./minicdn -mirror http://localhost:5000 -cachedir=cache -addr :11000 -log cdn.log
+./minicdn -mirror http://localhost:5000 -addr :11000 -log cdn.log
 ```
 
-* Big file will store to cache folder
 * Speed up the mirror site: `http://localhost:5000`
 * Listen address `:11000`
 * Store log to `cdn.log`
@@ -98,9 +97,10 @@ The download resource link should change to this: `http://your-cdn-host:11000/so
 ### Run Peer
 
 ```shell
-./minicdn -upstream http://localhost:11000 -addr :8001
+./minicdn -upstream http://localhost:11000 -cachedir=cache -addr :8001
 ```
 
+* Big file will store to cache folder
 * Specify Manager address: `http://localhost:11000`
 * Listen address `:8001`
 
