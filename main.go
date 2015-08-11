@@ -59,7 +59,7 @@ func main() {
 	}
 
 	if *logfile == "-" || *logfile == "" {
-		cdnlog = log.New(os.Stderr, "CDNLOG: ", 0)
+		cdnlog = log.New(os.Stderr, "", log.LstdFlags)
 	} else {
 		fd, err := os.OpenFile(*logfile, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {

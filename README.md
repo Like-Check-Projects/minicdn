@@ -3,7 +3,9 @@
 
 A simple CDN, based on [groupcache](https://github.com/golang/groupcache).
 
-Use pull method, can't handle too big files. I limited to (512M) for now.
+Use pull method.
+
+Small file(less than 64M) will put int to memory, Other will store as local file.
 
 一般来说会推荐采用qiniu或者upyun,又或者是amazon之类大公司的cdn服务，不过当需要一些自己实现的场景，比如企业内部软件的加速，就需要一个私有的CDN了。
 
@@ -11,7 +13,10 @@ Use pull method, can't handle too big files. I limited to (512M) for now.
 
 通常来说CDN分为push和pull两种方式，push比较适合大文件，pull适合小一些的文件，但是使用起来比push要简单的多。
 
-MiniCDN采用的就是pull这种方式，目前的实现方式是所有缓存的文件存储在内存中，使用LRU算法淘汰掉旧的文件，镜像的文件受限于缓冲区的大小（目前的缓冲区是512M），如果超过了这个缓冲器大小，就没有加速的效果了。
+MiniCDN采用的就是pull这种方式，目前的实现方式是所有缓存的文件存储在内存中，使用LRU算法淘汰掉旧的文件.
+
+* 小文件采用内存存储 (该方法支持节点间的数据传输). 
+* 大文件使用本地存储，来防止内存占用过多 (只能从源站点获取数据)
 
 没有所谓的智能DNS,直接用的是最简单的http redirect. 还没写负载均衡, 所以redirect的时候，就是随机返回一个节点（简单粗暴)
 
@@ -80,9 +85,10 @@ minicdn contains two parts. manager and peer
 ### Run Manager
 
 ```shell
-./minicdn -mirror http://localhost:5000 -addr :11000 -log cdn.log
+./minicdn -mirror http://localhost:5000 -cachedir=cache -addr :11000 -log cdn.log
 ```
 
+* Big file will store to cache folder
 * Speed up the mirror site: `http://localhost:5000`
 * Listen address `:11000`
 * Store log to `cdn.log`
