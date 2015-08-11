@@ -1,10 +1,10 @@
 {
 	"ImportPath": "minicdn",
-	"GoVersion": "go1.5beta1",
+	"GoVersion": "go1.4.2",
 	"Deps": [
 		{
 			"ImportPath": "github.com/codeskyblue/groupcache",
-			"Rev": "b803b7719ea858c5be08e8f06dbc19f8696bf191"
+			"Rev": "e8d28effb80afab42223c06e0c1f91bddb505f41"
 		},
 		{
 			"ImportPath": "github.com/golang/groupcache/consistenthash",
@@ -29,10 +29,6 @@
 		{
 			"ImportPath": "github.com/gorilla/websocket",
 			"Rev": "a3ec486e6a7a41858210b0fc5d7b5df593b3c4a3"
-		},
-		{
-			"ImportPath": "github.com/ugorji/go/codec",
-			"Rev": "e906e395b9d45d3230e800c8ad1f92f99764e753"
 		}
 	]
 }
