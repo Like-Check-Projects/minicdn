@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/md5"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -20,15 +19,18 @@ import (
 )
 
 var (
-	thumbNails = groupcache.NewGroup("thumbnail", MAX_MEMORY_SIZE*2, groupcache.GetterFunc(
-		func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
-			bytes, err := downloadThumbnail(key)
-			if err != nil {
-				return err
-			}
-			dest.SetBytes(bytes)
-			return nil
-		}))
+	cacheGroup *groupcache.Group
+	// thumbNails = groupcache.NewGroup("thumbnail", MAX_MEMORY_SIZE*2, groupcache.GetterFunc(
+	// 	func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
+	// 		bytes, err := downloadThumbnail(key)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 		dest.SetBytes(bytes)
+	// 		return nil
+	// 	}))
+	// cachedir string
+	// mirror string
 )
 
 const (
@@ -53,14 +55,16 @@ type HttpResponse struct {
 	metaPath string
 	bodyPath string
 	tempPath string
+
+	cachedir string
 }
 
 func (hr *HttpResponse) setKey(key string) {
 	if hr.key != key {
 		hr.key = key
 		hr.basePath = Md5str(key)
-		hr.bodyPath = filepath.Join(*cachedir, hr.basePath+".body")
-		hr.metaPath = filepath.Join(*cachedir, hr.basePath+".meta")
+		hr.bodyPath = filepath.Join(hr.cachedir, hr.basePath+".body")
+		hr.metaPath = filepath.Join(hr.cachedir, hr.basePath+".meta")
 		hr.tempPath = hr.bodyPath + fmt.Sprintf(".%d.temp.download", rand.Int())
 	}
 }
@@ -112,12 +116,8 @@ func (e *ErrorWithResponse) Error() string {
 	return fmt.Sprintf("Specified for groupcache.Getter, type: %d", e.Type)
 }
 
-func Md5str(v string) string {
-	return fmt.Sprintf("%x", md5.Sum([]byte(v)))
-}
-
-func downloadThumbnail(key string) ([]byte, error) {
-	u, _ := url.Parse(*mirror)
+func downloadThumbnail(mirror string, cachedir string, key string) ([]byte, error) {
+	u, _ := url.Parse(mirror)
 	u.Path = key
 	//fmt.Println("thumbnail:", key)
 	resp, err := http.Get(u.String())
@@ -134,6 +134,7 @@ func downloadThumbnail(key string) ([]byte, error) {
 				BodyData:   body,
 				Header:     resp.Header,
 				StatusCode: resp.StatusCode,
+				cachedir:   cachedir,
 			},
 			Type: ER_TYPE_HTML,
 		}
@@ -142,9 +143,10 @@ func downloadThumbnail(key string) ([]byte, error) {
 	// If no length provided, maybe this is a big file
 	var length int64
 	_, err = fmt.Sscanf(resp.Header.Get("Content-Length"), "%d", &length)
+	// log.Printf("key: %s, length: %d", key, length)
 
 	if err != nil || length > MAX_MEMORY_SIZE {
-		var hr = HttpResponse{}
+		var hr = HttpResponse{cachedir: cachedir}
 		hr.setKey(key)
 
 		finfo, err := os.Stat(hr.bodyPath)
@@ -171,6 +173,7 @@ func downloadThumbnail(key string) ([]byte, error) {
 			var hr = &HttpResponse{
 				Header:     resp.Header,
 				StatusCode: http.StatusOK,
+				cachedir:   cachedir,
 			}
 			if err := hr.DumpMeta(key); err != nil { // meta
 				return nil, err
@@ -187,8 +190,41 @@ func downloadThumbnail(key string) ([]byte, error) {
 			return nil, err
 		}
 
-		var hr = &HttpResponse{Header: resp.Header, BodyData: bodydata, StatusCode: resp.StatusCode}
+		var hr = &HttpResponse{Header: resp.Header, BodyData: bodydata, StatusCode: resp.StatusCode, cachedir: cachedir}
 		return GobEncode(hr)
+	}
+}
+
+func NewFileHandler(isMaster bool, mirror string, cachedir string) func(w http.ResponseWriter, r *http.Request) {
+	cacheGroup = groupcache.NewGroup("thumbnail", MAX_MEMORY_SIZE*2, groupcache.GetterFunc(
+		func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
+			bytes, err := downloadThumbnail(mirror, cachedir, key)
+			if err != nil {
+				return err
+			}
+			dest.SetBytes(bytes)
+			return nil
+		}))
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.URL.Path
+
+		state.addActiveDownload(1)
+		defer state.addActiveDownload(-1)
+
+		if isMaster {
+			// redirect to slaves
+			if peerAddr, err := peerGroup.PeekPeer(); err == nil {
+				u, _ := url.Parse(peerAddr)
+				u.Path = r.URL.Path
+				u.RawQuery = r.URL.RawQuery
+				http.Redirect(w, r, u.String(), 302)
+				return
+			}
+		} else {
+			sendStats(r) // stats send to master
+		}
+		serveContent(key, cachedir, w, r)
 	}
 }
 
@@ -213,32 +249,12 @@ func sendStats(r *http.Request) {
 		data["header_data"] = headerData
 		data["header_type"] = headerType
 	}
-
-	if *upstream != "" { // Slave
-		sendc <- data
-	}
+	sendc <- data
 }
 
-func FileHandler(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Path
-
-	state.addActiveDownload(1)
-	defer state.addActiveDownload(-1)
-
-	sendStats(r) // stats send to master
-
-	if *upstream == "" { // Master
-		if peerAddr, err := peerGroup.PeekPeer(); err == nil {
-			u, _ := url.Parse(peerAddr)
-			u.Path = r.URL.Path
-			u.RawQuery = r.URL.RawQuery
-			http.Redirect(w, r, u.String(), 302)
-			return
-		}
-	}
-
+func serveContent(key string, cachedir string, w http.ResponseWriter, r *http.Request) {
 	var err error
-	var hr HttpResponse
+	var hr = HttpResponse{cachedir: cachedir}
 	var rd io.ReadSeeker
 	var data []byte
 	var ctx groupcache.Context
@@ -251,12 +267,13 @@ func FileHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, er.Error(), 500)
 			return
 		}
+		defer bodyfd.Close()
 		rd = bodyfd
 		goto SERVE_CONTENT
 	}
 
 	// Read Groupcache
-	err = thumbNails.Get(ctx, key, groupcache.AllocatingByteSliceSink(&data))
+	err = cacheGroup.Get(ctx, key, groupcache.AllocatingByteSliceSink(&data))
 	if err == nil {
 		// FIXME(ssx): use gob is not a good way.
 		// It will create new space for hr.BodyData which will use too much memory.
@@ -312,15 +329,15 @@ SERVE_CONTENT:
 	http.ServeContent(w, r, filepath.Base(key), modTime, rd)
 }
 
-func LogHandler(w http.ResponseWriter, r *http.Request) {
-	if *logfile == "" || *logfile == "-" {
-		http.Error(w, "Log file not found", 404)
-		return
-	}
-	http.ServeFile(w, r, *logfile)
-}
+// func LogHandler(w http.ResponseWriter, r *http.Request) {
+// 	if *logfile == "" || *logfile == "-" {
+// 		http.Error(w, "Log file not found", 404)
+// 		return
+// 	}
+// 	http.ServeFile(w, r, *logfile)
+// }
 
-func init() {
-	http.HandleFunc("/", FileHandler)
-	http.HandleFunc("/_log", LogHandler)
-}
+// func init() {
+// http.HandleFunc("/",NewFileHandler(isMaster, cachedir) FileHandler)
+// http.HandleFunc("/_log", LogHandler)
+// }
