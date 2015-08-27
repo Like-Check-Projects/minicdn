@@ -48,23 +48,23 @@ groupcache是2013年写出来的，软件也不怎么更新了。里面的HTTPPo
 
 ## 架构
 
-* M: Manager
+* M: Master
 	
-	1. 负责维护Peer的列表,每个peer会去Manager同步这个列表。
+	1. 负责维护Slave的列表,每个peer会去Master同步这个列表。
 	2. 所有的请求会先请求到manager, 然后由manager重定向到不同的peer
 
-* P: Peer
+* S: Slave
 
 	1. 提供文件的下载服务
-	2. Peer之间会根据从manager拿到的peer列表，同步文件
+	2. Slave之间会根据从master拿到的slave列表，同步文件
 
-Manager与Peer是一对多的关系
+Master与Slave是一对多的关系
 
 ```
 [M]
  |`------+--------+---......
  |       |        |
-[P]     [P]      [P]  ....
+[S]     [S]      [S]  ....
 ```
 
 ## Installation
@@ -72,7 +72,7 @@ Manager与Peer是一对多的关系
 go get -u -v github.com/codeskyblue/minicdn
 
 # See help
-minicdn -h
+minicdn help
 ```
 
 ## Requirements
@@ -82,10 +82,10 @@ minicdn -h
 ## Usage
 minicdn contains two parts. manager and peer
 
-### Run Manager
+### Run Master
 
 ```shell
-./minicdn -mirror http://localhost:5000 -addr :11000 -log cdn.log
+./minicdn master --mirror http://localhost:5000 -l cdn.log --addr :11000
 ```
 
 * Speed up the mirror site: `http://localhost:5000`
@@ -94,14 +94,14 @@ minicdn contains two parts. manager and peer
 
 The download resource link should change to this: `http://your-cdn-host:11000/something`
 
-### Run Peer
+### Run Slave
 
 ```shell
-./minicdn -upstream http://localhost:11000 -cachedir=cache -addr :8001
+./minicdn --cachedir=cache slave --master-addr http://localhost:11000 --addr :8001
 ```
 
 * Big file will store to cache folder
-* Specify Manager address: `http://localhost:11000`
+* Specify Master address: `http://localhost:11000`
 * Listen address `:8001`
 
 ### Log format

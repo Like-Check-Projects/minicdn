@@ -29,8 +29,6 @@ var (
 	// 		dest.SetBytes(bytes)
 	// 		return nil
 	// 	}))
-	// cachedir string
-	// mirror string
 )
 
 const (
@@ -196,7 +194,7 @@ func downloadThumbnail(mirror string, cachedir string, key string) ([]byte, erro
 }
 
 func NewFileHandler(isMaster bool, mirror string, cachedir string) func(w http.ResponseWriter, r *http.Request) {
-	cacheGroup = groupcache.NewGroup("thumbnail", MAX_MEMORY_SIZE*2, groupcache.GetterFunc(
+	cacheGroup = groupcache.NewGroup(mirror, MAX_MEMORY_SIZE*2, groupcache.GetterFunc(
 		func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
 			bytes, err := downloadThumbnail(mirror, cachedir, key)
 			if err != nil {
@@ -207,7 +205,8 @@ func NewFileHandler(isMaster bool, mirror string, cachedir string) func(w http.R
 		}))
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		key := r.URL.Path
+		key := r.URL.RequestURI()
+		// key := r.URL.Path
 
 		state.addActiveDownload(1)
 		defer state.addActiveDownload(-1)

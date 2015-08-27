@@ -66,11 +66,6 @@ func createCliApp() *cli.App {
 			Value: "cache",
 			Usage: "caeche dir which store big files",
 		},
-		cli.StringFlag{
-			Name:  "addr",
-			Value: ":5000",
-			Usage: "listen address",
-		},
 	}
 	app.Action = func(c *cli.Context) {
 		log.Println("Default action")
@@ -89,6 +84,11 @@ func createCliApp() *cli.App {
 					Value: "-",
 					Usage: "log file",
 				},
+				cli.StringFlag{
+					Name:  "addr",
+					Value: ":5000",
+					Usage: "listen address",
+				},
 			},
 			Action: masterAction,
 		},
@@ -97,8 +97,13 @@ func createCliApp() *cli.App {
 			Usage: "slave mode",
 			Flags: []cli.Flag{
 				cli.StringFlag{
-					Name:  "upaddr",
-					Usage: "upstream address",
+					Name:  "master-addr, m",
+					Usage: "master listen address",
+				},
+				cli.StringFlag{
+					Name:  "addr",
+					Value: ":5000",
+					Usage: "listen address",
 				},
 			},
 			Action: slaveAction,
@@ -131,8 +136,15 @@ func masterAction(c *cli.Context) {
 
 	http.HandleFunc(defaultWSURL, NewWsHandler(mirror, wslog))
 	http.HandleFunc("/", NewFileHandler(true, mirror, c.GlobalString("cachedir")))
+	http.HandleFunc("/_log", func(w http.ResponseWriter, r *http.Request) {
+		if logfile == "" || logfile == "-" {
+			http.Error(w, "Log file not found", 404)
+			return
+		}
+		http.ServeFile(w, r, logfile)
+	})
 
-	listenAddr := c.GlobalString("addr")
+	listenAddr := c.String("addr")
 	log.Printf("Listening on %s", listenAddr)
 	InitSignal()
 	log.Fatal(http.ListenAndServe(listenAddr, nil))
@@ -141,8 +153,8 @@ func masterAction(c *cli.Context) {
 func slaveAction(c *cli.Context) {
 	cachedir := c.GlobalString("cachedir")
 	token := c.GlobalString("token")
-	listenAddr := c.GlobalString("addr")
-	masterAddr := c.String("upaddr")
+	listenAddr := c.String("addr")
+	masterAddr := c.String("master-addr")
 	if _, err := os.Stat(cachedir); os.IsNotExist(err) {
 		er := os.MkdirAll(cachedir, 0755)
 		checkErr(er)

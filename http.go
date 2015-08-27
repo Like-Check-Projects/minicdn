@@ -29,10 +29,6 @@ const (
 	ACTION_PEER_UPDATE = "peer_update"
 )
 
-// func InitMaster(mirror string, wslog *log.Logger, cachedir string) (err error) {
-// 	return nil
-// }
-
 func NewWsHandler(mirror string, wslog *log.Logger) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -82,12 +78,7 @@ func NewWsHandler(mirror string, wslog *log.Logger) func(w http.ResponseWriter, 
 					"data":      msg,
 					"peer":      name,
 				})
-				// if *logfile == "-" {
-				// cdnlog.Printf("CDNLOG: %s - %-20s%s", name, msg["remote_addr"], msg["key"]) //string(msgb))
-				//cdnlog.Println(string(msgb))
-				// } else {
 				wslog.Println(string(msgb))
-				// }
 			default:
 				log.Println("UNKNOWN:", msg)
 			}
@@ -162,14 +153,15 @@ func InitPeer(masterAddr string, listenAddr string, cachedir string, token strin
 					break
 				}
 				log.Println("Connection to master closed !!!")
-				for {
-					log.Println("> retry in 5 seconds")
-					time.Sleep(time.Second * 5)
-					if err := InitPeer(masterAddr, listenAddr, cachedir, token); err == nil {
-						break
-					}
-				}
 				break
+				// for {
+				// 	log.Println("> retry in 5 seconds")
+				// 	time.Sleep(time.Second * 5)
+				// 	if err := InitPeer(masterAddr, listenAddr, cachedir, token); err == nil {
+				// 		break
+				// 	}
+				// }
+				// break
 			}
 			action := msg["action"]
 			switch action {
