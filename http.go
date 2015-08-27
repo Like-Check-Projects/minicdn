@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -171,6 +172,7 @@ func InitPeer(masterAddr string, listenAddr string, cachedir string, token strin
 				pool.Set(peers...)
 			}
 		}
+		os.Exit(1)
 	}()
 
 	// send queue
@@ -187,6 +189,5 @@ func InitPeer(masterAddr string, listenAddr string, cachedir string, token strin
 			}
 		}
 	}()
-
 	return nil
 }
