@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/codegangsta/cli"
 )
 
 var cdnlog *log.Logger
@@ -22,7 +24,7 @@ var (
 )
 
 func InitSignal() {
-	sig := make(chan os.Signal, 2)
+	sig := make(chan os.Signal, 10)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		for {
@@ -42,6 +44,28 @@ func InitSignal() {
 }
 
 func main() {
+	app := cli.NewApp()
+	app.Name = "minicdn"
+	app.Usage = "type help for more information"
+	app.Commands = []cli.Command{
+		{
+			Name:    "master",
+			Aliases: []string{"m"},
+			Usage:   "mater mode",
+			Action: func(c *cli.Context) {
+				println("Master mode")
+			},
+		},
+		{
+			Name:  "slave",
+			Usage: "slave mode",
+			Action: func(c *cli.Context) {
+				println("Slave mode")
+			},
+		},
+	}
+	app.Run(os.Args)
+
 	flag.Parse()
 
 	if *mirror != "" && *upstream != "" {
