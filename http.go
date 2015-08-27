@@ -23,6 +23,12 @@ var (
 	sendc    = make(chan map[string]interface{}, 10)
 )
 
+const (
+	ACTION_LOGIN       = "login"
+	ACTION_LOG         = "log"
+	ACTION_PEER_UPDATE = "peer_update"
+)
+
 func InitMaster() (err error) {
 	http.HandleFunc(defaultWSURL, WSHandler)
 	return nil
@@ -55,7 +61,7 @@ func WSHandler(w http.ResponseWriter, r *http.Request) {
 
 		action, _ := msg["action"].(string)
 		switch action {
-		case "LOGIN":
+		case ACTION_LOGIN:
 			name = "http://" + remoteHost + ":" + msg["port"].(string)
 			currKeys := peerGroup.Keys()
 			peerGroup.AddPeer(name, conn)
@@ -69,21 +75,26 @@ func WSHandler(w http.ResponseWriter, r *http.Request) {
 			for _, key := range currKeys {
 				if s, exists := peerGroup.m[key]; exists {
 					s.Connection.WriteJSON(map[string]string{
-						"action": "PEER_UPDATE",
+						"action": ACTION_PEER_UPDATE,
 						"peers":  strings.Join(peerGroup.Keys(), ","),
 					})
 				}
 			}
 			peerGroup.RUnlock()
 			log.Printf("Peer: %s JOIN", name)
-		case "LOG":
+		case ACTION_LOG:
 			delete(msg, "action")
 			msgb, _ := json.Marshal(map[string]interface{}{
 				"timestamp": time.Now().Unix(),
 				"data":      msg,
 				"peer":      name,
 			})
-			cdnlog.Println(string(msgb))
+			if *logfile == "-" {
+				cdnlog.Printf("CDNLOG: %s - %-20s%s", name, msg["remote_addr"], msg["key"]) //string(msgb))
+				//cdnlog.Println(string(msgb))
+			} else {
+				cdnlog.Println(string(msgb))
+			}
 		default:
 			log.Println("UNKNOWN:", msg)
 		}
@@ -97,7 +108,7 @@ func WSHandler(w http.ResponseWriter, r *http.Request) {
 	for _, key := range peerGroup.Keys() {
 		if s, exists := peerGroup.m[key]; exists {
 			s.Connection.WriteJSON(map[string]string{
-				"action": "PEER_UPDATE",
+				"action": ACTION_PEER_UPDATE,
 				"peers":  strings.Join(peerGroup.Keys(), ","),
 			})
 		}
@@ -124,7 +135,7 @@ func InitPeer() (err error) {
 	// Get slave name from master
 	_, port, _ := net.SplitHostPort(*address)
 	wsclient.WriteJSON(map[string]string{
-		"action": "LOGIN",
+		"action": ACTION_LOGIN,
 		"token":  *token,
 		"port":   port,
 	})
@@ -167,7 +178,7 @@ func InitPeer() (err error) {
 			}
 			action := msg["action"]
 			switch action {
-			case "PEER_UPDATE":
+			case ACTION_PEER_UPDATE:
 				peers := strings.Split(msg["peers"], ",")
 				log.Println("Update peer list:", peers)
 				pool.Set(peers...)
@@ -180,7 +191,7 @@ func InitPeer() (err error) {
 		for msg := range sendc {
 			//log.Println("Send msg:", msg)
 			if msg["action"] == nil {
-				msg["action"] = "LOG"
+				msg["action"] = ACTION_LOG
 			}
 			err := wsclient.WriteJSON(msg)
 			if err != nil {
